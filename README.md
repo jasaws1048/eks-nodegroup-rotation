@@ -1,6 +1,7 @@
 # EKS Nodegroup Rotation
 
-This repo holds the stepfunction workflow for creating EC2 instance and execute remote powershell script for configuration of EC2 using Systems Manager (Run Command)
+This repo holds the nodegroup rotation workflow which will create one node in new nodegroup and delete one node from older nodegroup in rolling restart fashion. 
+And, also transfer the workload from older nodegroups to new nodegroups.
 
 ## Description
 Node rotation involves replacing existing nodes within a cluster with new nodes without disrupting the overall functionality of the applications running on the cluster. This process ensures that the cluster remains healthy, secure, and up-to-date with the latest software patches and security fixes.
