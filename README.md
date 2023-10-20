@@ -10,7 +10,7 @@ Node rotation involves replacing existing nodes within a cluster with new nodes 
 
 
 ## Architecture
-
+![Architecture](images/EKS_Nodegroup_Rotation.png)
 
 ## Usage
 
