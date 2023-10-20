@@ -78,9 +78,9 @@ aws autoscaling suspend-processes --auto-scaling-group-name $OLD_AUTOSCALING_GRO
 #Verifying the launch process is suspended
 echo "Verifying whether the process is suspended"
 aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $OLD_AUTOSCALING_GROUP_NAME --query "AutoScalingGroups[0].SuspendedProcesses"
-
-# Loop until the number of nodes in the new nodegroup matches the old nodegroup
-while true
+    
+#Draining nodes, Terminating nodes, Updating Autoscaling group size
+for node in ${nodes[@]}
 do
     # Get the number of nodes in the new nodegroup
     NEW_NUM_NODES=$(kubectl get nodes -l eks.amazonaws.com/nodegroup=$NEW_NODEGROUP_NAME --no-headers | wc -l)
@@ -93,77 +93,76 @@ do
     fi
     echo "Number of nodes in the new nodegroup does not match the old nodegroup."
     echo "Waiting for the number of nodes in the new nodegroup to match the old nodegroup..."
-        
-    #Draining nodes, Terminating nodes, Updating Autoscaling group size
-    for node in ${nodes[@]}
+    
+    # Add one node to the new nodegroup by Updating the autoscaling group of new nodegroup
+    echo "Updating the autoscaling group of new nodegroup"
+
+    # Get current desired capacity and max size
+    current_desired_capacity_new_nodegroup=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $NEW_AUTOSCALING_GROUP_NAME --query "AutoScalingGroups[0].DesiredCapacity" --output text)
+    echo "The current desired capacity of new asg $current_desired_capacity_new_nodegroup"
+    current_max_size_new_nodegroup=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $NEW_AUTOSCALING_GROUP_NAME --query "AutoScalingGroups[0].MaxSize" --output text)
+    echo "The current max size of new asg $current_max_size_new_nodegroup"
+
+    # Increase desired capacity and max size by 1
+    updated_desired_capacity_new_nodegroup=$((current_desired_capacity_new_nodegroup + 1))
+    echo "The updated desired capacity of asg $updated_desired_capacity_new_nodegroup"
+    updated_max_size_new_nodegroup=$((current_max_size_new_nodegroup + 1))
+    echo "The updated max size of asg $updated_max_size_new_nodegroup"
+
+    # Update the size
+    aws autoscaling update-auto-scaling-group --auto-scaling-group-name $NEW_AUTOSCALING_GROUP_NAME --desired-capacity $updated_desired_capacity_new_nodegroup --max-size $updated_max_size_new_nodegroup
+    echo "The size of new asg is updated"
+    
+    # Wait for the new node to be ready
+    while true
     do
-        # Add one node to the new nodegroup by Updating the autoscaling group of new nodegroup
-        echo "Updating the autoscaling group of new nodegroup"
-
-        # Get current desired capacity and max size
-        current_desired_capacity_new_nodegroup=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $NEW_AUTOSCALING_GROUP_NAME --query "AutoScalingGroups[0].DesiredCapacity" --output text)
-        echo "The current desired capacity of new asg $current_desired_capacity_new_nodegroup"
-        current_max_size_new_nodegroup=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $NEW_AUTOSCALING_GROUP_NAME --query "AutoScalingGroups[0].MaxSize" --output text)
-        echo "The current max size of new asg $current_max_size_new_nodegroup"
-
-        # Increase desired capacity and max size by 1
-        updated_desired_capacity_new_nodegroup=$((current_desired_capacity_new_nodegroup + 1))
-        echo "The updated desired capacity of asg $updated_desired_capacity_new_nodegroup"
-        updated_max_size_new_nodegroup=$((current_max_size_new_nodegroup + 1))
-        echo "The updated max size of asg $updated_max_size_new_nodegroup"
-
-        # Update the size
-        aws autoscaling update-auto-scaling-group --auto-scaling-group-name $NEW_AUTOSCALING_GROUP_NAME --desired-capacity $updated_desired_capacity_new_nodegroup --max-size $updated_max_size_new_nodegroup
-        echo "The size of new asg is updated"
-        
-        # Wait for the new node to be ready
-        while true
-        do
-            #Getting the number of ready nodes
-            num_ready_nodes=$(kubectl get nodes -l eks.amazonaws.com/nodegroup=$NEW_NODEGROUP_NAME --no-headers | grep -c 'Ready')
-            if [ "$num_ready_nodes" == "$updated_desired_capacity_new_nodegroup" ]; then
-                echo "All nodes are ready"
-                #move to the deletion of another node from old nodegroup
-                break
-            fi
-        done
-        echo "Waiting for new node to be ready  is completed"
-
-        # Drain the node
-        echo "Draining $node"
-        kubectl drain $node --ignore-daemonsets --delete-local-data
-
-        echo "Draining $node is completed"
-        echo "Terminating $node"
-
-        # Getting the instance Id from the node name
-        INSTANCE_ID=$(kubectl get nodes $node -o=jsonpath='{.spec.providerID}' | awk -F'/' '{print $NF}')
-
-        # Terminating the instance
-        echo "Terminating the instance with instance id: $INSTANCE_ID"
-        aws autoscaling terminate-instance-in-auto-scaling-group --instance-id $INSTANCE_ID --no-should-decrement-desired-capacity
-        echo "Terminating the instance is completed"
-
-        # Updating the autoscaling group of old nodegroup
-        echo "Updating the autoscaling group of old nodegroup"
-        # Get current desired capacity and min size
-        current_desired_capacity_old_nodegroup=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $OLD_AUTOSCALING_GROUP_NAME --query "AutoScalingGroups[0].DesiredCapacity" --output text)
-        echo "The current desired capacity of old asg $current_desired_capacity_old_nodegroup"
-        current_min_size_old_nodegroup=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $OLD_AUTOSCALING_GROUP_NAME --query "AutoScalingGroups[0].MinSize" --output text)
-        echo "The current min size of old asg $current_min_size_old_nodegroup"
-
-        # Reduce desired capacity and min size by 1 of old nodegroup
-        updated_desired_capacity_old_nodegroup=$((current_desired_capacity_old_nodegroup - 1))
-        echo "The updated desired capacity of old asg $updated_desired_capacity_old_nodegroup"
-        updated_min_size_old_nodegroup=$((current_min_size_old_nodegroup - 1))
-        echo "The updated min size of old asg $updated_min_size_old_nodegroup"
-
-        # Update the size
-        aws autoscaling update-auto-scaling-group --auto-scaling-group-name $OLD_AUTOSCALING_GROUP_NAME --desired-capacity $updated_desired_capacity_old_nodegroup --min-size $updated_min_size_old_nodegroup
-        echo "The size of old asg is updated"
+        #Getting the number of ready nodes
+        num_ready_nodes=$(kubectl get nodes -l eks.amazonaws.com/nodegroup=$NEW_NODEGROUP_NAME --no-headers | grep -c 'Ready')
+        if [ "$num_ready_nodes" == "$updated_desired_capacity_new_nodegroup" ]; then
+            echo "All nodes are ready"
+            #move to the deletion of another node from old nodegroup
+            break
+        fi
     done
+    echo "Waiting for new node to be ready  is completed"
+
+    # Drain the node
+    echo "Draining $node"
+    kubectl drain $node --ignore-daemonsets --delete-local-data
+
+    echo "Draining $node is completed"
+    echo "Terminating $node"
+
+    # Getting the instance Id from the node name
+    INSTANCE_ID=$(kubectl get nodes $node -o=jsonpath='{.spec.providerID}' | awk -F'/' '{print $NF}')
+
+    # Terminating the instance
+    echo "Terminating the instance with instance id: $INSTANCE_ID"
+    aws autoscaling terminate-instance-in-auto-scaling-group --instance-id $INSTANCE_ID --no-should-decrement-desired-capacity
+    echo "Terminating the instance is completed"
+
+    # Updating the autoscaling group of old nodegroup
+    echo "Updating the autoscaling group of old nodegroup"
+    # Get current desired capacity and min size
+    current_desired_capacity_old_nodegroup=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $OLD_AUTOSCALING_GROUP_NAME --query "AutoScalingGroups[0].DesiredCapacity" --output text)
+    echo "The current desired capacity of old asg $current_desired_capacity_old_nodegroup"
+    current_min_size_old_nodegroup=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names $OLD_AUTOSCALING_GROUP_NAME --query "AutoScalingGroups[0].MinSize" --output text)
+    echo "The current min size of old asg $current_min_size_old_nodegroup"
+
+    # Reduce desired capacity and min size by 1 of old nodegroup
+    updated_desired_capacity_old_nodegroup=$((current_desired_capacity_old_nodegroup - 1))
+    echo "The updated desired capacity of old asg $updated_desired_capacity_old_nodegroup"
+    updated_min_size_old_nodegroup=$((current_min_size_old_nodegroup - 1))
+    echo "The updated min size of old asg $updated_min_size_old_nodegroup"
+
+    # Update the size
+    aws autoscaling update-auto-scaling-group --auto-scaling-group-name $OLD_AUTOSCALING_GROUP_NAME --desired-capacity $updated_desired_capacity_old_nodegroup --min-size $updated_min_size_old_nodegroup
+    echo "The size of old asg is updated"
 done
 
 #Deleting the EKS Nodegroup 
 echo "Deleting the nodegroup cloudformation stack"
 aws eks delete-nodegroup --cluster-name $CLUSTER_NAME --nodegroup-name $OLD_NODEGROUP_NAME
+
+#Deleting the cloudformation 
+aws cloudformation delete-stack --stack-name eksctl-$CLUSTER_NAME-nodegroup-$OLD_NODEGROUP_NAME
