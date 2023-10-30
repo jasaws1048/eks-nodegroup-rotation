@@ -1,9 +1,6 @@
 #!/bin/sh
 # This script is used to rotate nodes in a nodegroup
-# Usage: ./nodegroup_rotation.sh <cluster_name> <nodegroup_name>
-# Example: ./nodegroup_rotation.sh my-cluster my-nodegroup
-# This script assumes that the AWS CLI is installed and configured
-# It also assumes that the kubectl command is installed and configured
+# Example: ./nodegroup_rotation.sh <cluster-name> <new_nodegroup_name>
 
 CLUSTER_NAME=$1
 NEW_NODEGROUP_NAME=$2
