@@ -20,8 +20,8 @@ Node rotation involves replacing existing nodes within a cluster with new nodes 
 These are the steps to be followed to execute the shell script:
 1. git clone this repository.
 2. Execute the shell script by nodegroup_rotation.sh 
-    a. ./nodegroup_rotation.sh <cluster_name> <new_nodegroup_name>
-    b. sh nodegroup_rotation.sh <cluster_name> <new_nodegroup_name>
+* ./nodegroup_rotation.sh <cluster_name> <new_nodegroup_name>
+* sh nodegroup_rotation.sh <cluster_name> <new_nodegroup_name>
 
 ## Security
 
